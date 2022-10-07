@@ -1,7 +1,7 @@
 //
 // Xero Go Example - main
 // Author: Henrique Dias
-// Last Modification: 2022-10-06 22:12:19
+// Last Modification: 2022-10-07 21:47:26
 //
 
 package main
@@ -21,7 +21,10 @@ type App struct {
 			RedirectUri  string `json:"redirect_uri"`
 			Code         string `json:"code"`
 			CodeVerifier string `json:"code_verifier"`
-			TenantName   string `json:"tenant_name"`
+			Tenant       struct {
+				Name string `json:"name"`
+				Type string `json:"type"`
+			} `json:"tenant"`
 		} `json:"xero"`
 		CachedToken string `json:"cached_token"`
 	}
@@ -38,9 +41,7 @@ func (app *App) runApp() {
 	}
 
 	if !app.xeroGetCachedAccessToken() {
-		if app.Xero.Token.AccessToken == "" {
-			app.xeroExchangeTheCode()
-		}
+		app.xeroExchangeTheCode()
 	}
 
 	// fmt.Println("AccessToken:", app.Xero.Token.AccessToken, "RefreshToken:", app.Xero.Token.RefreshToken)
