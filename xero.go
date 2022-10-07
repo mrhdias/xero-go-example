@@ -1,7 +1,7 @@
 //
 // Xero Go Example - xero
 // Author: Henrique Dias
-// Last Modification: 2022-10-06 22:13:05
+// Last Modification: 2022-10-07 21:45:21
 //
 
 package main
@@ -31,10 +31,14 @@ func (app *App) xeroGenerateTheLinkToAuthorize() {
 	}
 
 	xeroUrl := "https://login.xero.com/identity/connect/authorize"
+
+	// https://developer.xero.com/documentation/guides/oauth2/scopes
+	// When you add a new scope, ask again for authorization by set the Xero "code" to empty.
 	scope := strings.Join([]string{
 		"openid",
 		"accounting.transactions",
 		"accounting.contacts",
+		"accounting.settings",
 		"offline_access",
 	}, " ")
 
@@ -215,30 +219,32 @@ func (app *App) xeroCheckTheTenants() {
 
 	xeroUrl := "https://api.xero.com/connections"
 
+	req, err := http.NewRequest("GET", xeroUrl, nil)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", app.Xero.Token.AccessToken))
+	req.Header.Add("content-type", "application/json")
+
 	client := &http.Client{}
 
 	var xeroTenant []XeroTenant
 	refreshToken := false
+
 	for {
-		req, err := http.NewRequest("GET", xeroUrl, nil)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", app.Xero.Token.AccessToken))
-		req.Header.Add("content-type", "application/json")
-
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Fatalln(err)
 		}
 
-		defer resp.Body.Close()
-
 		respContentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
+			resp.Body.Close()
 			log.Fatalln(err)
 		}
+
+		resp.Body.Close()
 
 		// fmt.Println("Xero Check The Tenants:", string(respContentBytes))
 
@@ -251,6 +257,7 @@ func (app *App) xeroCheckTheTenants() {
 				if strings.HasPrefix(xeroConnections.Detail, "TokenExpired:") {
 					refreshToken = true
 					if app.xeroRefreshToken() {
+						req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", app.Xero.Token.AccessToken))
 						continue
 					}
 				}
@@ -270,7 +277,8 @@ func (app *App) xeroCheckTheTenants() {
 	}
 
 	for _, tenant := range xeroTenant {
-		if strings.EqualFold(tenant.TenantType, "ORGANISATION") && strings.EqualFold(tenant.TenantName, app.Config.Xero.TenantName) {
+		if strings.EqualFold(tenant.TenantType, app.Config.Xero.Tenant.Type) &&
+			strings.EqualFold(tenant.TenantName, app.Config.Xero.Tenant.Name) {
 			app.Xero.TenantID = tenant.TenantID
 			break
 		}
@@ -282,38 +290,37 @@ func (app *App) xeroGetContacts() {
 
 	xeroUrl := "https://api.xero.com/api.xro/2.0/Contacts"
 
+	req, err := http.NewRequest("GET", xeroUrl, nil)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Xero-tenant-id", app.Xero.TenantID)
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", app.Xero.Token.AccessToken))
+
+	values := req.URL.Query()
+	values.Add("summaryOnly", "true")
+	// values.Add("where", fmt.Sprintf("EmailAddress=\"%s\"", "mrhdias@gmail.com"))
+	values.Add("searchTerm", "mrhdias@gmail.com")
+	req.URL.RawQuery = values.Encode()
+
 	client := &http.Client{}
-
 	refreshToken := false
+
 	for {
-
-		req, err := http.NewRequest("GET", xeroUrl, nil)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		req.Header.Add("Accept", "application/json")
-		req.Header.Add("Xero-tenant-id", app.Xero.TenantID)
-
-		values := req.URL.Query()
-		values.Add("summaryOnly", "true")
-		// values.Add("where", fmt.Sprintf("EmailAddress=\"%s\"", "mrhdias@gmail.com"))
-		values.Add("searchTerm", "mrhdias@gmail.com")
-		req.URL.RawQuery = values.Encode()
-
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", app.Xero.Token.AccessToken))
-
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Fatalln(err)
 		}
 
-		defer resp.Body.Close()
-
 		respContentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
+			resp.Body.Close()
 			log.Fatalln(err)
 		}
+
+		resp.Body.Close()
 
 		fmt.Println("Xero Get Contacts:", string(respContentBytes))
 
@@ -326,6 +333,7 @@ func (app *App) xeroGetContacts() {
 				if strings.HasPrefix(xeroConnections.Detail, "TokenExpired:") {
 					refreshToken = true
 					if app.xeroRefreshToken() {
+						req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", app.Xero.Token.AccessToken))
 						continue
 					}
 				}
@@ -343,39 +351,40 @@ func (app *App) xeroGetInvoices() {
 
 	xeroUrl := "https://api.xero.com/api.xro/2.0/Invoices"
 
-	client := &http.Client{}
+	req, err := http.NewRequest("GET", xeroUrl, nil)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	page := 1
+	values := req.URL.Query()
+	values.Add("page", fmt.Sprintf("%d", page))
+	values.Add("createdByMyApp", "true")
+	values.Add("summaryOnly", "true")
+	// values.Add("where", fmt.Sprintf("Reference=\"%s\"", "#IE-0001"))
+	req.URL.RawQuery = values.Encode()
+
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Xero-tenant-id", app.Xero.TenantID)
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", app.Xero.Token.AccessToken))
+
+	client := &http.Client{}
+
 	refreshToken := false
+
 	for {
-		req, err := http.NewRequest("GET", xeroUrl, nil)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		req.Header.Add("Accept", "application/json")
-		req.Header.Add("Xero-tenant-id", app.Xero.TenantID)
-
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", app.Xero.Token.AccessToken))
-
-		values := req.URL.Query()
-		values.Add("page", fmt.Sprintf("%d", page))
-		values.Add("createdByMyApp", "true")
-		values.Add("summaryOnly", "true")
-		// values.Add("where", fmt.Sprintf("Reference=\"%s\"", "#IE-0001"))
-		req.URL.RawQuery = values.Encode()
 
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Fatalln(err)
 		}
 
-		defer resp.Body.Close()
-
 		respContentBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
+			resp.Body.Close()
 			log.Fatalln(err)
 		}
+		resp.Body.Close()
 
 		fmt.Println("Xero Get Invoices:", string(respContentBytes))
 
@@ -388,6 +397,7 @@ func (app *App) xeroGetInvoices() {
 				if strings.HasPrefix(xeroConnections.Detail, "TokenExpired:") {
 					refreshToken = true
 					if app.xeroRefreshToken() {
+						req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", app.Xero.Token.AccessToken))
 						continue
 					}
 				}
@@ -395,7 +405,10 @@ func (app *App) xeroGetInvoices() {
 			log.Fatalf("The request get \"invoices\" from Xero returned an error with status code %d\r\n", resp.StatusCode)
 		}
 
-		page++
+		page++ // if you get a new page
+
+		values.Set("page", fmt.Sprintf("%d", page))
+		req.URL.RawQuery = values.Encode()
 
 		break
 	}
