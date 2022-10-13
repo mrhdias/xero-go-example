@@ -1,7 +1,7 @@
 //
 // Xero Go Example - main
 // Author: Henrique Dias
-// Last Modification: 2022-10-07 21:47:26
+// Last Modification: 2022-10-13 11:52:21
 //
 
 package main
@@ -74,8 +74,8 @@ func main() {
 	fmt.Println(string(byteJsonConfig))
 
 	var app App
-	json.Unmarshal([]byte(byteJsonConfig), &app.Config)
-	if err != nil {
+
+	if err := json.Unmarshal([]byte(byteJsonConfig), &app.Config); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
